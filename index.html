@@ -407,11 +407,15 @@ footer a{color:var(--text-secondary)}
 <!-- Install -->
 <section class="fade-in" id="install">
   <h2 class="section-title" data-i18n="install_title">Get Started</h2>
-  <p class="section-subtitle" data-i18n="install_subtitle">Two commands and you're done.</p>
+  <p class="section-subtitle" data-i18n="install_subtitle">Clone, install, and initialize.</p>
   <div class="install-block">
     <div class="install-cmd">
-      <span class="t-prompt">$ </span>pip install claude-knowledge-graph
-      <button class="copy-btn" onclick="copyCmd(this,'pip install claude-knowledge-graph')">Copy</button>
+      <span class="t-prompt">$ </span>git clone https://github.com/NAMYUNWOO/claude-knowledge-graph.git
+      <button class="copy-btn" onclick="copyCmd(this,'git clone https://github.com/NAMYUNWOO/claude-knowledge-graph.git')">Copy</button>
+    </div>
+    <div class="install-cmd">
+      <span class="t-prompt">$ </span>cd claude-knowledge-graph &amp;&amp; pip install -e .
+      <button class="copy-btn" onclick="copyCmd(this,'cd claude-knowledge-graph && pip install -e .')">Copy</button>
     </div>
     <div class="install-cmd">
       <span class="t-prompt">$ </span>ckg init --vault-dir ~/my-obsidian-vault
@@ -460,7 +464,7 @@ const i18n = {
     f2_title:'Edge AI', f2_desc:'Qwen 3.5 4B runs locally via llama.cpp. 2-4 second tagging, on-demand server that frees VRAM when idle.',
     f3_title:'Privacy First', f3_desc:'All processing stays on your machine. No API calls, no cloud. Safe for enterprise environments.',
     f4_title:'Knowledge Graph', f4_desc:'Wikilinks, concept notes, daily logs, and a Map of Content. Explore connections in Obsidian\'s graph view.',
-    install_title:'Get Started', install_subtitle:'Two commands and you\'re done.',
+    install_title:'Get Started', install_subtitle:'Clone, install, and initialize.',
     req_gpu:'GPU recommended (CPU works but slower)',
   },
   ko: {
@@ -483,7 +487,7 @@ const i18n = {
     f2_title:'엣지 AI', f2_desc:'Qwen 3.5 4B가 llama.cpp를 통해 로컬에서 실행됩니다. 2-4초 태깅, 유휴 시 VRAM을 해제하는 온디맨드 서버.',
     f3_title:'프라이버시 우선', f3_desc:'모든 처리가 로컬에서 이루어집니다. API 호출 없음, 클라우드 없음. 엔터프라이즈 환경에 안전합니다.',
     f4_title:'지식 그래프', f4_desc:'위키링크, 개념 노트, 일일 로그, Map of Content. Obsidian 그래프 뷰에서 연결을 탐색하세요.',
-    install_title:'시작하기', install_subtitle:'두 개의 명령으로 끝.',
+    install_title:'시작하기', install_subtitle:'클론, 설치, 초기화.',
     req_gpu:'GPU 권장 (CPU도 가능하지만 느림)',
   }
 };
