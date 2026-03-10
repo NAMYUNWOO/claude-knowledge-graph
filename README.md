@@ -12,8 +12,14 @@ Automatically captures all conversations from Claude Code, tags and summarizes t
 - **Zero friction** — Hook-based auto-capture means you don't have to do anything. Just use Claude Code as usual.
 - **Fast & lightweight edge AI** — Qwen 3.5 4B runs in the background and finishes tagging in seconds, never interrupting your workflow.
 - **Privacy-safe** — All processing stays on your machine. Safe for enterprise environments where code-related conversations must not leave the local network.
-- **Unified work archive** — No matter which project or directory you're working in, everything converges into a single Obsidian vault. Search and reflect on your entire work history in one place.
+- **Unified work archive across all projects** — No matter which project or directory you're working in, every conversation converges into a single Obsidian vault. Context-switching between a data pipeline, a security model, and a side project? All the debugging insights, architecture decisions, and lessons learned end up in one searchable place — not scattered across project folders.
 - **Connected knowledge graph** — Concepts are linked via wikilinks and shared tags, so you can visually explore how your technical topics relate to each other over time.
+
+## Who is this for?
+
+- **Developers juggling multiple projects** — All conversations from every project and directory converge into one vault. Stop losing knowledge to context-switching.
+- **Developers who want to reflect on their work** — Daily notes with timestamps and project paths let you trace what you worked on, when, and why. Your personal work archive builds itself.
+- **Teams in privacy-sensitive environments** — All processing stays local. No API calls, no cloud, no data leaving your machine.
 
 ## Key Features
 
