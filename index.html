@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>claude-knowledge-graph — Every conversation becomes knowledge</title>
+<meta name="description" content="Auto-capture Claude Code Q&A → local LLM tagging → Obsidian knowledge graph. Zero friction, privacy-safe, all projects converge into one vault.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;
+  --surface:rgba(255,255,255,.04);
+  --surface-hover:rgba(255,255,255,.07);
+  --border:rgba(255,255,255,.08);
+  --border-hover:rgba(255,255,255,.14);
+  --text:#e4e4e7;
+  --text-secondary:#a1a1aa;
+  --text-tertiary:#71717a;
+  --accent:#d97757;
+  --accent-glow:rgba(217,119,87,.15);
+  --green:#6ECB63;
+  --orange:#E8A838;
+  --blue:#4A90D9;
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Inter',system-ui,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--sans);
+  background:var(--bg);
+  color:var(--text);
+  line-height:1.6;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* Language toggle */
+.lang-toggle{
+  position:fixed;top:20px;right:20px;z-index:1000;
+  display:flex;gap:4px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:999px;padding:4px;
+  backdrop-filter:blur(12px);
+}
+.lang-btn{
+  padding:6px 14px;border-radius:999px;border:none;
+  background:transparent;color:var(--text-secondary);
+  font-family:var(--sans);font-size:.8rem;font-weight:600;
+  cursor:pointer;transition:all .15s;
+}
+.lang-btn.active{
+  background:var(--accent-glow);color:var(--accent);
+}
+
+/* Hero */
+.hero{
+  min-height:100vh;display:flex;flex-direction:column;
+  position:relative;overflow:hidden;
+}
+.hero::before{
+  content:'';position:absolute;top:-30%;left:50%;
+  transform:translateX(-50%);
+  width:800px;height:800px;
+  background:radial-gradient(circle,var(--accent-glow) 0%,transparent 70%);
+  pointer-events:none;
+}
+#graph-container{
+  flex:1;position:relative;min-height:0;
+}
+#graph-container svg{
+  width:100%;height:100%;display:block;
+}
+.hero-overlay{
+  position:relative;padding:40px 24px 60px;text-align:center;
+  background:linear-gradient(to top,var(--bg) 0%,transparent 100%);
+}
+.hero-tagline{
+  font-size:clamp(2rem,5vw,3.6rem);font-weight:800;
+  line-height:1.15;margin-bottom:12px;
+  background:linear-gradient(135deg,#fff 30%,var(--accent));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.hero-subtitle{
+  font-size:clamp(.95rem,2vw,1.15rem);
+  color:var(--text-secondary);max-width:600px;margin:0 auto 28px;
+}
+.cta-btn{
+  display:inline-block;padding:14px 32px;
+  background:var(--accent);color:#fff;font-weight:700;
+  font-size:1rem;border-radius:999px;border:none;cursor:pointer;
+  transition:transform .15s,box-shadow .2s;
+  font-family:var(--sans);
+}
+.cta-btn:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 24px rgba(217,119,87,.35);
+  text-decoration:none;color:#fff;
+}
+
+/* Legend */
+.graph-legend{
+  position:absolute;bottom:16px;left:16px;
+  display:flex;gap:16px;flex-wrap:wrap;
+  font-size:.75rem;color:var(--text-secondary);
+  pointer-events:none;
+}
+.legend-item{display:flex;align-items:center;gap:5px}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+
+/* Detail card */
+.detail-card{
+  position:absolute;z-index:100;
+  background:rgba(16,16,24,.95);
+  border:1px solid var(--border-hover);
+  border-radius:var(--radius);
+  padding:20px;max-width:380px;width:calc(100% - 32px);
+  backdrop-filter:blur(16px);
+  box-shadow:0 16px 48px rgba(0,0,0,.5);
+  display:none;
+}
+.detail-card.visible{display:block}
+.detail-card-close{
+  position:absolute;top:10px;right:14px;
+  background:none;border:none;color:var(--text-tertiary);
+  font-size:1.2rem;cursor:pointer;line-height:1;
+}
+.detail-card-close:hover{color:var(--text)}
+.detail-card h3{font-size:1.05rem;margin-bottom:8px;color:var(--text)}
+.detail-card .meta{font-family:var(--mono);font-size:.75rem;color:var(--text-tertiary);margin-bottom:8px}
+.detail-card .summary{font-size:.85rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5}
+.detail-card .tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.detail-card .tag{
+  padding:3px 10px;border-radius:999px;font-size:.7rem;font-weight:600;
+  background:rgba(217,119,87,.12);color:var(--accent);
+}
+.detail-card .concepts{display:flex;flex-wrap:wrap;gap:6px}
+.detail-card .concept-link{
+  padding:3px 10px;border-radius:999px;font-size:.7rem;font-weight:600;
+  background:rgba(232,168,56,.12);color:var(--orange);
+  cursor:pointer;transition:background .15s;
+}
+.detail-card .concept-link:hover{background:rgba(232,168,56,.25)}
+.detail-card .ref-list{font-size:.8rem;color:var(--text-secondary);margin-top:6px}
+.detail-card .ref-list li{margin-bottom:4px;cursor:pointer}
+.detail-card .ref-list li:hover{color:var(--text)}
+
+/* Sections */
+section{padding:100px 24px;max-width:1100px;margin:0 auto}
+.section-title{
+  font-size:clamp(1.6rem,3.5vw,2.4rem);font-weight:800;
+  text-align:center;margin-bottom:12px;
+}
+.section-subtitle{
+  text-align:center;color:var(--text-secondary);
+  max-width:560px;margin:0 auto 48px;font-size:.95rem;
+}
+
+/* Fade-in */
+.fade-in{opacity:0;transform:translateY(24px);transition:opacity .6s,transform .6s}
+.fade-in.visible{opacity:1;transform:translateY(0)}
+
+/* Who cards */
+.who-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.who-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:28px 24px;
+  transition:border-color .2s,transform .2s;
+}
+.who-card:hover{border-color:var(--border-hover);transform:translateY(-2px)}
+.who-card .icon{font-size:1.6rem;margin-bottom:12px}
+.who-card h3{font-size:1.05rem;font-weight:700;margin-bottom:8px}
+.who-card p{font-size:.88rem;color:var(--text-secondary);line-height:1.55}
+
+/* Pipeline */
+.pipeline{display:flex;align-items:flex-start;gap:0;justify-content:center;flex-wrap:wrap}
+.pipe-step{
+  display:flex;flex-direction:column;align-items:center;text-align:center;
+  width:180px;padding:16px 8px;
+}
+.pipe-icon{
+  width:56px;height:56px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.4rem;margin-bottom:10px;
+  background:var(--surface);border:1px solid var(--border);
+}
+.pipe-step h4{font-size:.9rem;font-weight:700;margin-bottom:4px}
+.pipe-step p{font-size:.78rem;color:var(--text-tertiary)}
+.pipe-arrow{
+  display:flex;align-items:center;padding-top:20px;
+  color:var(--text-tertiary);font-size:1.2rem;
+  filter:drop-shadow(0 0 6px var(--accent-glow));
+}
+
+/* Terminal mockup */
+.terminal{
+  background:#111118;border:1px solid var(--border);
+  border-radius:var(--radius);overflow:hidden;
+  max-width:640px;margin:32px auto 0;
+  font-family:var(--mono);font-size:.82rem;
+}
+.terminal-bar{
+  display:flex;align-items:center;gap:6px;
+  padding:10px 14px;background:rgba(255,255,255,.03);
+  border-bottom:1px solid var(--border);
+}
+.terminal-dot{width:10px;height:10px;border-radius:50%}
+.terminal-body{padding:16px 18px;line-height:1.7;overflow-x:auto}
+.t-prompt{color:var(--green)}
+.t-cmd{color:var(--text)}
+.t-info{color:var(--blue)}
+.t-dim{color:var(--text-tertiary)}
+.t-success{color:var(--green)}
+.t-accent{color:var(--accent)}
+.t-warn{color:var(--orange)}
+
+/* Features grid */
+.features-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.feature-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:28px 24px;
+  transition:border-color .2s;
+}
+.feature-card:hover{border-color:var(--border-hover)}
+.feature-card h3{font-size:1rem;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.feature-card p{font-size:.88rem;color:var(--text-secondary);line-height:1.55}
+
+/* Install */
+.install-block{max-width:560px;margin:0 auto}
+.install-cmd{
+  position:relative;background:#111118;border:1px solid var(--border);
+  border-radius:8px;padding:14px 50px 14px 18px;
+  font-family:var(--mono);font-size:.88rem;
+  color:var(--text);margin-bottom:10px;
+  overflow-x:auto;
+}
+.copy-btn{
+  position:absolute;top:50%;right:10px;transform:translateY(-50%);
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:6px;padding:5px 10px;
+  color:var(--text-secondary);font-size:.75rem;cursor:pointer;
+  font-family:var(--sans);transition:color .15s;
+}
+.copy-btn:hover{color:var(--text)}
+.requirements{
+  margin-top:24px;font-size:.88rem;color:var(--text-secondary);
+}
+.requirements li{margin-bottom:6px;list-style:none;padding-left:16px;position:relative}
+.requirements li::before{content:'';position:absolute;left:0;top:9px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+
+/* Footer */
+footer{
+  text-align:center;padding:48px 24px;
+  border-top:1px solid var(--border);
+  color:var(--text-tertiary);font-size:.82rem;
+}
+footer a{color:var(--text-secondary)}
+
+/* Mobile */
+@media(max-width:768px){
+  .who-grid{grid-template-columns:1fr}
+  .features-grid{grid-template-columns:1fr}
+  .pipeline{flex-direction:column;align-items:center}
+  .pipe-arrow{transform:rotate(90deg);padding:4px 0}
+  section{padding:64px 18px}
+  .detail-card{
+    position:fixed;bottom:0;left:0;right:0;
+    max-width:100%;width:100%;
+    border-radius:var(--radius) var(--radius) 0 0;
+    max-height:60vh;overflow-y:auto;
+  }
+}
+
+/* Node hover */
+.node{cursor:pointer}
+.node:hover{filter:brightness(1.3)}
+</style>
+</head>
+<body>
+
+<!-- Language Toggle -->
+<div class="lang-toggle">
+  <button class="lang-btn active" data-lang-btn="en" onclick="setLang('en')">EN</button>
+  <button class="lang-btn" data-lang-btn="ko" onclick="setLang('ko')">KO</button>
+</div>
+
+<!-- Hero -->
+<section class="hero" id="hero">
+  <div id="graph-container">
+    <div class="graph-legend">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div><span data-i18n="legend_session">Session</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div><span data-i18n="legend_concept">Concept</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div><span data-i18n="legend_daily">Daily Note</span></div>
+    </div>
+    <!-- Detail card -->
+    <div class="detail-card" id="detail-card">
+      <button class="detail-card-close" onclick="closeCard()">&times;</button>
+      <div id="card-content"></div>
+    </div>
+  </div>
+  <div class="hero-overlay">
+    <h1 class="hero-tagline" data-i18n="tagline">Every conversation becomes knowledge.</h1>
+    <p class="hero-subtitle" data-i18n="subtitle">Auto-capture Claude Code sessions, tag with a local LLM, and build a knowledge graph in Obsidian. All projects converge into one searchable vault.</p>
+    <a href="#install" class="cta-btn" data-i18n="cta">Get Started</a>
+  </div>
+</section>
+
+<!-- Who is this for -->
+<section class="fade-in" id="who">
+  <h2 class="section-title" data-i18n="who_title">Who is this for?</h2>
+  <p class="section-subtitle" data-i18n="who_subtitle">If you use Claude Code daily, your conversations hold valuable knowledge. Stop losing it.</p>
+  <div class="who-grid">
+    <div class="who-card">
+      <div class="icon">&#x1F4BB;</div>
+      <h3 data-i18n="who1_title">Multi-Project Developers</h3>
+      <p data-i18n="who1_desc">Conversations from every project and directory converge into one vault. Stop losing knowledge to context-switching.</p>
+    </div>
+    <div class="who-card">
+      <div class="icon">&#x1F4D3;</div>
+      <h3 data-i18n="who2_title">Reflective Practitioners</h3>
+      <p data-i18n="who2_desc">Daily notes with timestamps and project paths let you trace what you worked on, when, and why. Your personal work archive builds itself.</p>
+    </div>
+    <div class="who-card">
+      <div class="icon">&#x1F512;</div>
+      <h3 data-i18n="who3_title">Privacy-Conscious Teams</h3>
+      <p data-i18n="who3_desc">All processing stays local. No API calls, no cloud, no data leaving your machine. Safe for enterprise environments.</p>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section class="fade-in" id="how">
+  <h2 class="section-title" data-i18n="how_title">How it works</h2>
+  <p class="section-subtitle" data-i18n="how_subtitle">A four-step pipeline that runs automatically in the background.</p>
+  <div class="pipeline">
+    <div class="pipe-step">
+      <div class="pipe-icon">&#x1F3A3;</div>
+      <h4 data-i18n="pipe1_title">Hook Capture</h4>
+      <p data-i18n="pipe1_desc">Claude Code hooks auto-capture every Q&A pair</p>
+    </div>
+    <div class="pipe-arrow">&#x2192;</div>
+    <div class="pipe-step">
+      <div class="pipe-icon">&#x1F4E6;</div>
+      <h4 data-i18n="pipe2_title">Queue</h4>
+      <p data-i18n="pipe2_desc">JSON files queued for processing</p>
+    </div>
+    <div class="pipe-arrow">&#x2192;</div>
+    <div class="pipe-step">
+      <div class="pipe-icon">&#x1F9E0;</div>
+      <h4 data-i18n="pipe3_title">Qwen Tagging</h4>
+      <p data-i18n="pipe3_desc">Local LLM extracts title, tags, concepts in 2-4s</p>
+    </div>
+    <div class="pipe-arrow">&#x2192;</div>
+    <div class="pipe-step">
+      <div class="pipe-icon">&#x1F4D6;</div>
+      <h4 data-i18n="pipe4_title">Obsidian Notes</h4>
+      <p data-i18n="pipe4_desc">Daily notes, concept notes, and MOC auto-generated</p>
+    </div>
+  </div>
+  <div class="terminal" style="margin-top:40px">
+    <div class="terminal-bar">
+      <div class="terminal-dot" style="background:#ff5f57"></div>
+      <div class="terminal-dot" style="background:#ffbd2e"></div>
+      <div class="terminal-dot" style="background:#28c840"></div>
+    </div>
+    <div class="terminal-body">
+      <div><span class="t-prompt">$ </span><span class="t-cmd">ckg status</span></div>
+      <div>&nbsp;</div>
+      <div><span class="t-info">Queue:</span> <span class="t-dim">2 pending / 12 processed / 47 written</span></div>
+      <div><span class="t-info">Hooks:</span> <span class="t-success">registered</span> <span class="t-dim">(UserPromptSubmit + Stop)</span></div>
+      <div><span class="t-info">Model:</span> <span class="t-dim">Qwen3.5-4B-Q4_K_M.gguf (2.6 GB)</span></div>
+      <div><span class="t-info">Vault:</span> <span class="t-dim">~/obsidian-vault/knowledge-graph/</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="fade-in" id="features">
+  <h2 class="section-title" data-i18n="feat_title">Features</h2>
+  <p class="section-subtitle" data-i18n="feat_subtitle">Designed to stay out of your way while building your knowledge base.</p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <h3><span>&#x26A1;</span> <span data-i18n="f1_title">Zero Friction</span></h3>
+      <p data-i18n="f1_desc">Hook-based auto-capture means you don't have to do anything. Just use Claude Code as usual.</p>
+    </div>
+    <div class="feature-card">
+      <h3><span>&#x1F9E0;</span> <span data-i18n="f2_title">Edge AI</span></h3>
+      <p data-i18n="f2_desc">Qwen 3.5 4B runs locally via llama.cpp. 2-4 second tagging, on-demand server that frees VRAM when idle.</p>
+    </div>
+    <div class="feature-card">
+      <h3><span>&#x1F512;</span> <span data-i18n="f3_title">Privacy First</span></h3>
+      <p data-i18n="f3_desc">All processing stays on your machine. No API calls, no cloud. Safe for enterprise environments.</p>
+    </div>
+    <div class="feature-card">
+      <h3><span>&#x1F578;&#xFE0F;</span> <span data-i18n="f4_title">Knowledge Graph</span></h3>
+      <p data-i18n="f4_desc">Wikilinks, concept notes, daily logs, and a Map of Content. Explore connections in Obsidian's graph view.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Install -->
+<section class="fade-in" id="install">
+  <h2 class="section-title" data-i18n="install_title">Get Started</h2>
+  <p class="section-subtitle" data-i18n="install_subtitle">Two commands and you're done.</p>
+  <div class="install-block">
+    <div class="install-cmd">
+      <span class="t-prompt">$ </span>pip install claude-knowledge-graph
+      <button class="copy-btn" onclick="copyCmd(this,'pip install claude-knowledge-graph')">Copy</button>
+    </div>
+    <div class="install-cmd">
+      <span class="t-prompt">$ </span>ckg init --vault-dir ~/my-obsidian-vault
+      <button class="copy-btn" onclick="copyCmd(this,'ckg init --vault-dir ~/my-obsidian-vault')">Copy</button>
+    </div>
+    <ul class="requirements">
+      <li>Python 3.10+</li>
+      <li><a href="https://claude.com/claude-code" target="_blank">Claude Code</a> CLI</li>
+      <li>llama.cpp (<a href="https://github.com/ggml-org/llama.cpp" target="_blank">llama-server</a>)</li>
+      <li data-i18n="req_gpu">GPU recommended (CPU works but slower)</li>
+    </ul>
+    <div style="text-align:center;margin-top:32px">
+      <a href="https://github.com/yunwoonam/claude-knowledge-graph" target="_blank" class="cta-btn" style="background:transparent;border:1px solid var(--accent);color:var(--accent)">
+        GitHub Repository
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p>MIT License &middot; <a href="https://github.com/yunwoonam/claude-knowledge-graph" target="_blank">GitHub</a></p>
+</footer>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// ─── i18n ───
+const i18n = {
+  en: {
+    legend_session:'Session', legend_concept:'Concept', legend_daily:'Daily Note',
+    tagline:'Every conversation becomes knowledge.',
+    subtitle:'Auto-capture Claude Code sessions, tag with a local LLM, and build a knowledge graph in Obsidian. All projects converge into one searchable vault.',
+    cta:'Get Started',
+    who_title:'Who is this for?',
+    who_subtitle:'If you use Claude Code daily, your conversations hold valuable knowledge. Stop losing it.',
+    who1_title:'Multi-Project Developers', who1_desc:'Conversations from every project and directory converge into one vault. Stop losing knowledge to context-switching.',
+    who2_title:'Reflective Practitioners', who2_desc:'Daily notes with timestamps and project paths let you trace what you worked on, when, and why. Your personal work archive builds itself.',
+    who3_title:'Privacy-Conscious Teams', who3_desc:'All processing stays local. No API calls, no cloud, no data leaving your machine. Safe for enterprise environments.',
+    how_title:'How it works', how_subtitle:'A four-step pipeline that runs automatically in the background.',
+    pipe1_title:'Hook Capture', pipe1_desc:'Claude Code hooks auto-capture every Q&A pair',
+    pipe2_title:'Queue', pipe2_desc:'JSON files queued for processing',
+    pipe3_title:'Qwen Tagging', pipe3_desc:'Local LLM extracts title, tags, concepts in 2-4s',
+    pipe4_title:'Obsidian Notes', pipe4_desc:'Daily notes, concept notes, and MOC auto-generated',
+    feat_title:'Features', feat_subtitle:'Designed to stay out of your way while building your knowledge base.',
+    f1_title:'Zero Friction', f1_desc:'Hook-based auto-capture means you don\'t have to do anything. Just use Claude Code as usual.',
+    f2_title:'Edge AI', f2_desc:'Qwen 3.5 4B runs locally via llama.cpp. 2-4 second tagging, on-demand server that frees VRAM when idle.',
+    f3_title:'Privacy First', f3_desc:'All processing stays on your machine. No API calls, no cloud. Safe for enterprise environments.',
+    f4_title:'Knowledge Graph', f4_desc:'Wikilinks, concept notes, daily logs, and a Map of Content. Explore connections in Obsidian\'s graph view.',
+    install_title:'Get Started', install_subtitle:'Two commands and you\'re done.',
+    req_gpu:'GPU recommended (CPU works but slower)',
+  },
+  ko: {
+    legend_session:'세션', legend_concept:'개념', legend_daily:'일일 노트',
+    tagline:'모든 대화가 지식이 됩니다.',
+    subtitle:'Claude Code 세션을 자동 캡처하고, 로컬 LLM으로 태그하고, Obsidian에 지식 그래프를 구축합니다. 모든 프로젝트가 하나의 볼트로 수렴됩니다.',
+    cta:'시작하기',
+    who_title:'누구를 위한 도구인가요?',
+    who_subtitle:'Claude Code를 매일 사용한다면, 대화 속 소중한 지식을 잃지 마세요.',
+    who1_title:'멀티 프로젝트 개발자', who1_desc:'모든 프로젝트와 디렉토리의 대화가 하나의 볼트로 모입니다. 컨텍스트 스위칭으로 지식을 잃지 마세요.',
+    who2_title:'회고하는 개발자', who2_desc:'타임스탬프와 프로젝트 경로가 포함된 일일 노트로 언제, 무엇을, 왜 작업했는지 추적할 수 있습니다.',
+    who3_title:'프라이버시 중시 팀', who3_desc:'모든 처리가 로컬에서 이루어집니다. API 호출 없음, 클라우드 없음. 엔터프라이즈 환경에 안전합니다.',
+    how_title:'어떻게 작동하나요?', how_subtitle:'백그라운드에서 자동으로 실행되는 4단계 파이프라인.',
+    pipe1_title:'훅 캡처', pipe1_desc:'Claude Code 훅이 모든 Q&A 쌍을 자동 캡처',
+    pipe2_title:'큐', pipe2_desc:'처리 대기 중인 JSON 파일',
+    pipe3_title:'Qwen 태깅', pipe3_desc:'로컬 LLM이 2-4초 만에 제목, 태그, 개념 추출',
+    pipe4_title:'Obsidian 노트', pipe4_desc:'일일 노트, 개념 노트, MOC 자동 생성',
+    feat_title:'주요 기능', feat_subtitle:'지식 베이스를 구축하면서도 작업 흐름을 방해하지 않도록 설계되었습니다.',
+    f1_title:'제로 프릭션', f1_desc:'훅 기반 자동 캡처로 아무것도 할 필요 없습니다. Claude Code를 평소처럼 사용하세요.',
+    f2_title:'엣지 AI', f2_desc:'Qwen 3.5 4B가 llama.cpp를 통해 로컬에서 실행됩니다. 2-4초 태깅, 유휴 시 VRAM을 해제하는 온디맨드 서버.',
+    f3_title:'프라이버시 우선', f3_desc:'모든 처리가 로컬에서 이루어집니다. API 호출 없음, 클라우드 없음. 엔터프라이즈 환경에 안전합니다.',
+    f4_title:'지식 그래프', f4_desc:'위키링크, 개념 노트, 일일 로그, Map of Content. Obsidian 그래프 뷰에서 연결을 탐색하세요.',
+    install_title:'시작하기', install_subtitle:'두 개의 명령으로 끝.',
+    req_gpu:'GPU 권장 (CPU도 가능하지만 느림)',
+  }
+};
+
+let currentLang = localStorage.getItem('ckg-lang') || (navigator.language.startsWith('ko') ? 'ko' : 'en');
+
+function setLang(lang) {
+  currentLang = lang;
+  localStorage.setItem('ckg-lang', lang);
+  document.documentElement.setAttribute('data-lang', lang);
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.langBtn === lang));
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (i18n[lang][key]) el.textContent = i18n[lang][key];
+  });
+}
+
+// Init lang
+setLang(currentLang);
+
+// ─── Copy button ───
+function copyCmd(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+// ─── Fade-in observer ───
+const fadeObs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); fadeObs.unobserve(e.target); }});
+}, { threshold: 0.15 });
+document.querySelectorAll('.fade-in').forEach(el => fadeObs.observe(el));
+
+// ─── Demo data ───
+const sessions = [
+  { id:'s1', type:'session', label:'FastAPI Auth Middleware', cwd:'~/projects/web-app', category:'development',
+    summary:'Implemented JWT-based authentication middleware for FastAPI, including token validation and role-based access control patterns.',
+    tags:['python','fastapi','security'], concepts:['JWT Authentication','Middleware Pattern'], date:'2026-03-08', ts:'14:22' },
+  { id:'s2', type:'session', label:'Docker Multi-Stage Build', cwd:'~/projects/web-app', category:'devops',
+    summary:'Optimized Docker image size using multi-stage builds, reducing the final image from 1.2GB to 180MB.',
+    tags:['docker','optimization','ci-cd'], concepts:['Docker Multi-Stage Build','Container Optimization'], date:'2026-03-08', ts:'16:45' },
+  { id:'s3', type:'session', label:'Airflow DAG Dependencies', cwd:'~/projects/data-pipeline', category:'architecture',
+    summary:'Designed DAG dependency structure for the ETL pipeline, using task groups and branching operators for conditional execution.',
+    tags:['airflow','etl','architecture'], concepts:['Airflow DAG Design','Task Dependencies'], date:'2026-03-09', ts:'09:15' },
+  { id:'s4', type:'session', label:'Pandas Memory Optimization', cwd:'~/projects/data-pipeline', category:'debugging',
+    summary:'Reduced DataFrame memory usage by 60% through strategic dtype casting and category conversion for string columns.',
+    tags:['pandas','performance','memory'], concepts:['Pandas Memory Optimization','Data Type Casting'], date:'2026-03-09', ts:'11:30' },
+  { id:'s5', type:'session', label:'Terraform State Locking', cwd:'~/projects/infra', category:'devops',
+    summary:'Configured DynamoDB-based state locking for Terraform to prevent concurrent modifications in team environment.',
+    tags:['terraform','aws','infrastructure'], concepts:['Terraform State Management','DynamoDB Locking'], date:'2026-03-09', ts:'15:00' },
+  { id:'s6', type:'session', label:'GitHub Actions CI Pipeline', cwd:'~/projects/infra', category:'devops',
+    summary:'Built CI pipeline with GitHub Actions including lint, test, build stages and Docker multi-stage build for deployment.',
+    tags:['github-actions','ci-cd','docker'], concepts:['CI/CD Pipeline Design','Docker Multi-Stage Build'], date:'2026-03-10', ts:'10:00' },
+  { id:'s7', type:'session', label:'SQLAlchemy Connection Pool', cwd:'~/projects/web-app', category:'debugging',
+    summary:'Debugged connection pool exhaustion by tuning pool_size, max_overflow, and implementing proper session lifecycle management.',
+    tags:['sqlalchemy','database','performance'], concepts:['Connection Pooling','Database Performance'], date:'2026-03-10', ts:'13:20' },
+  { id:'s8', type:'session', label:'Pytest Fixtures for API', cwd:'~/projects/web-app', category:'testing',
+    summary:'Created reusable pytest fixtures for API testing including authenticated client, test database, and mock services.',
+    tags:['pytest','testing','api'], concepts:['Pytest Fixtures','API Testing'], date:'2026-03-10', ts:'15:45' },
+];
+
+// Build graph data
+const nodes = [];
+const links = [];
+const conceptMap = {};
+
+// Daily notes
+const dailyDates = [...new Set(sessions.map(s => s.date))];
+dailyDates.forEach(d => {
+  const id = 'daily-' + d;
+  const daySessions = sessions.filter(s => s.date === d);
+  nodes.push({ id, type:'daily', label: d, sessions: daySessions.map(s => s.id), concepts: [...new Set(daySessions.flatMap(s => s.concepts))] });
+});
+
+// Sessions and concepts
+sessions.forEach(s => {
+  nodes.push(s);
+  // Link session to daily
+  links.push({ source: 'daily-' + s.date, target: s.id, type:'session-daily' });
+  // Link session to concepts
+  s.concepts.forEach(c => {
+    const cid = 'c-' + c.replace(/\s+/g,'-');
+    if (!conceptMap[c]) {
+      conceptMap[c] = { id: cid, type:'concept', label: c, sessions: [], relatedConcepts: [], tags: [] };
+      nodes.push(conceptMap[c]);
+    }
+    conceptMap[c].sessions.push(s.id);
+    conceptMap[c].tags = [...new Set([...conceptMap[c].tags, ...s.tags])];
+    links.push({ source: s.id, target: cid, type:'session-concept' });
+  });
+});
+
+// Related concepts (co-occurrence)
+const conceptNames = Object.keys(conceptMap);
+for (let i = 0; i < conceptNames.length; i++) {
+  for (let j = i + 1; j < conceptNames.length; j++) {
+    const a = conceptMap[conceptNames[i]], b = conceptMap[conceptNames[j]];
+    const shared = a.sessions.filter(s => b.sessions.includes(s));
+    const sharedTags = a.tags.filter(t => b.tags.includes(t));
+    if (shared.length > 0 || sharedTags.length >= 2) {
+      links.push({ source: a.id, target: b.id, type:'related' });
+      a.relatedConcepts.push(conceptNames[j]);
+      b.relatedConcepts.push(conceptNames[i]);
+    }
+  }
+}
+
+// ─── D3 Force Graph ───
+const container = document.getElementById('graph-container');
+const width = container.clientWidth;
+const height = container.clientHeight || window.innerHeight * 0.7;
+
+const svg = d3.select('#graph-container').append('svg')
+  .attr('viewBox', `0 0 ${width} ${height}`)
+  .attr('preserveAspectRatio', 'xMidYMid meet');
+
+// Defs for glow
+const defs = svg.append('defs');
+const glow = defs.append('filter').attr('id','glow');
+glow.append('feGaussianBlur').attr('stdDeviation','3').attr('result','coloredBlur');
+const feMerge = glow.append('feMerge');
+feMerge.append('feMergeNode').attr('in','coloredBlur');
+feMerge.append('feMergeNode').attr('in','SourceGraphic');
+
+const colorMap = { session:'#6ECB63', concept:'#E8A838', daily:'#4A90D9' };
+const isDesktop = width > 768;
+const scale = isDesktop ? Math.min(width, 1600) / 800 : 1;
+const radiusMap = { daily: 14 * scale, session: 10 * scale, concept: 8 * scale };
+
+const simulation = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
+    const base = d.type === 'session-daily' ? 45 : d.type === 'session-concept' ? 40 : d.type === 'related' ? 55 : 60;
+    return base * scale;
+  }).strength(1.2))
+  .force('charge', d3.forceManyBody().strength(-120 * scale))
+  .force('center', d3.forceCenter(width / 2, height / 2))
+  .force('collide', d3.forceCollide().radius(d => radiusMap[d.type] + 4 * scale))
+  .force('x', d3.forceX(width / 2).strength(0.06))
+  .force('y', d3.forceY(height / 2).strength(0.06));
+
+const link = svg.append('g').selectAll('line').data(links).join('line')
+  .attr('stroke', d => {
+    if (d.type === 'related') return '#E8A838';
+    if (d.type === 'session-concept') return '#6ECB63';
+    return '#555577';
+  })
+  .attr('stroke-opacity', d => {
+    if (d.type === 'related') return 0.3;
+    if (d.type === 'session-concept') return 0.2;
+    return 0.15;
+  })
+  .attr('stroke-width', d => {
+    if (d.type === 'related') return 1;
+    if (d.type === 'session-concept') return 0.8;
+    return 0.4;
+  });
+
+const node = svg.append('g').selectAll('g').data(nodes).join('g')
+  .attr('class','node')
+  .call(d3.drag()
+    .on('start', (event, d) => { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+    .on('end', (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
+  )
+  .on('click', (event, d) => showCard(d, event));
+
+node.append('circle')
+  .attr('r', d => radiusMap[d.type])
+  .attr('fill', d => colorMap[d.type])
+  .attr('opacity', d => d.type === 'daily' ? 0.9 : 0.8)
+  .attr('filter','url(#glow)');
+
+// Labels for all nodes
+node.append('text')
+  .text(d => {
+    const l = d.label;
+    return l.length > 20 ? l.slice(0,18) + '...' : l;
+  })
+  .attr('dy', d => radiusMap[d.type] + 10 * scale)
+  .attr('text-anchor','middle')
+  .attr('fill', d => d.type === 'session' ? '#a8d8a0' : d.type === 'daily' ? '#8bb8e0' : '#d4b880')
+  .attr('font-size', d => (d.type === 'daily' ? 8 : 7) * scale + 'px')
+  .attr('font-weight','600')
+  .attr('font-family','Inter, sans-serif')
+  .attr('pointer-events','none');
+
+simulation.on('tick', () => {
+  link
+    .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+    .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  node.attr('transform', d => `translate(${d.x},${d.y})`);
+});
+
+// ─── Detail Card ───
+const card = document.getElementById('detail-card');
+const cardContent = document.getElementById('card-content');
+
+function showCard(d, event) {
+  let html = '';
+  if (d.type === 'session') {
+    html = `<h3>${d.label}</h3>
+      <div class="meta">${d.date} ${d.ts} &middot; ${d.cwd} &middot; ${d.category}</div>
+      <div class="summary">${d.summary}</div>
+      <div class="tags">${d.tags.map(t => `<span class="tag">${t}</span>`).join('')}</div>
+      <div class="concepts">${d.concepts.map(c => `<span class="concept-link" onclick="navigateTo('c-${c.replace(/\\s+/g,'-')}')">[[ ${c} ]]</span>`).join('')}</div>`;
+  } else if (d.type === 'concept') {
+    const refSessions = sessions.filter(s => s.concepts.includes(d.label));
+    html = `<h3 style="color:var(--orange)">${d.label}</h3>
+      <div class="tags">${(d.tags||[]).map(t => `<span class="tag">${t}</span>`).join('')}</div>
+      <div class="summary" style="margin-top:8px">Referenced in ${refSessions.length} session${refSessions.length>1?'s':''}:</div>
+      <ul class="ref-list">${refSessions.map(s => `<li onclick="navigateTo('${s.id}')">${s.label} <span class="t-dim">(${s.cwd})</span></li>`).join('')}</ul>
+      ${d.relatedConcepts && d.relatedConcepts.length ? `<div style="margin-top:10px"><div class="summary">Related concepts:</div><div class="concepts">${d.relatedConcepts.map(c => `<span class="concept-link" onclick="navigateTo('c-${c.replace(/\\s+/g,'-')}')">[[ ${c} ]]</span>`).join('')}</div></div>` : ''}`;
+  } else if (d.type === 'daily') {
+    const daySessions = sessions.filter(s => s.date === d.label);
+    html = `<h3 style="color:var(--blue)">${d.label}</h3>
+      <div class="summary">${daySessions.length} session${daySessions.length>1?'s':''} recorded</div>
+      <ul class="ref-list">${daySessions.map(s => `<li onclick="navigateTo('${s.id}')">${s.ts} &middot; ${s.label}</li>`).join('')}</ul>
+      <div style="margin-top:8px"><div class="summary">Concepts:</div><div class="concepts">${(d.concepts||[]).map(c => `<span class="concept-link" onclick="navigateTo('c-${c.replace(/\\s+/g,'-')}')">[[ ${c} ]]</span>`).join('')}</div></div>`;
+  }
+  cardContent.innerHTML = html;
+  card.classList.add('visible');
+
+  // Position card (desktop: near click, mobile: bottom sheet via CSS)
+  if (window.innerWidth > 768) {
+    const rect = container.getBoundingClientRect();
+    let left = event.clientX - rect.left + 20;
+    let top = event.clientY - rect.top - 20;
+    if (left + 380 > rect.width) left = left - 420;
+    if (top + 300 > rect.height) top = rect.height - 320;
+    if (top < 10) top = 10;
+    card.style.left = left + 'px';
+    card.style.top = top + 'px';
+  }
+}
+
+function closeCard() { card.classList.remove('visible'); }
+
+function navigateTo(targetId) {
+  const targetNode = nodes.find(n => n.id === targetId);
+  if (!targetNode) return;
+  // Center view on target and highlight
+  simulation.alphaTarget(0.3).restart();
+  targetNode.fx = width / 2;
+  targetNode.fy = height / 2;
+  setTimeout(() => { targetNode.fx = null; targetNode.fy = null; simulation.alphaTarget(0); }, 800);
+  // Show card for target
+  showCard(targetNode, { clientX: window.innerWidth / 2, clientY: window.innerHeight * 0.35 });
+}
+
+// Close card on background click
+svg.on('click', (event) => {
+  if (event.target.tagName === 'svg' || event.target.tagName === 'line') closeCard();
+});
+
+// ─── Resize handler ───
+window.addEventListener('resize', () => {
+  const w = container.clientWidth;
+  const h = container.clientHeight || window.innerHeight * 0.7;
+  svg.attr('viewBox', `0 0 ${w} ${h}`);
+  simulation.force('center', d3.forceCenter(w / 2, h / 2));
+  simulation.force('x', d3.forceX(w / 2).strength(0.04));
+  simulation.force('y', d3.forceY(h / 2).strength(0.04));
+  simulation.alpha(0.3).restart();
+});
+</script>
+</body>
+</html>
