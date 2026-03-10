@@ -49,11 +49,7 @@ Claude Code session
 ### 1. Install the package
 
 ```bash
-# PyPI (planned)
-pip install claude-knowledge-graph
-
-# Or install from source
-git clone https://github.com/yunwoonam/claude-knowledge-graph.git
+git clone https://github.com/NAMYUNWOO/claude-knowledge-graph.git
 cd claude-knowledge-graph
 pip install -e .
 ```
