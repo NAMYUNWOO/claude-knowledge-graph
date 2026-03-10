@@ -629,15 +629,17 @@ const link = svg.append('g').selectAll('line').data(links).join('line')
   .attr('stroke', d => {
     if (d.type === 'related') return '#E8A838';
     if (d.type === 'session-concept') return '#6ECB63';
+    if (d.type === 'session-daily') return '#4A90D9';
     return '#555577';
   })
   .attr('stroke-opacity', d => {
     if (d.type === 'related') return 0.55;
     if (d.type === 'session-concept') return 0.45;
+    if (d.type === 'session-daily') return 0.5;
     return 0.35;
   })
   .attr('stroke-width', d => {
-    const w = d.type === 'related' ? 2 : d.type === 'session-concept' ? 1.6 : 1.2;
+    const w = d.type === 'related' ? 2 : d.type === 'session-concept' ? 1.6 : d.type === 'session-daily' ? 1.8 : 1.2;
     return w * scale;
   });
 
