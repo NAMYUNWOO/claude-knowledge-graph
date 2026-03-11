@@ -257,10 +257,10 @@ cwd: "{cwd}"{tool_frontmatter}
 ## Conversation
 
 > [!question] Prompt
-> {truncate(prompt, 800)}
+> {prompt.replace(chr(10), chr(10) + '> ')}
 
 > [!quote] Response
-> {truncate(response, 800)}
+> {response.replace(chr(10), chr(10) + '> ')}
 """
     session_file.write_text(content)
     return session_file
