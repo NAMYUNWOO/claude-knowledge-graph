@@ -103,6 +103,14 @@ a:hover{text-decoration:underline}
   box-shadow:0 8px 24px rgba(217,119,87,.35);
   text-decoration:none;color:#fff;
 }
+.github-btn{
+  background:transparent;border:1px solid var(--accent);color:var(--accent);
+  margin-left:12px;
+}
+.github-btn:hover{
+  background:var(--accent-glow);color:var(--accent);
+  box-shadow:0 8px 24px rgba(217,119,87,.15);
+}
 
 /* Legend */
 .graph-legend{
@@ -308,6 +316,7 @@ footer a{color:var(--text-secondary)}
     <h1 class="hero-tagline" data-i18n="tagline">Every conversation becomes knowledge.</h1>
     <p class="hero-subtitle" data-i18n="subtitle">Auto-capture Claude Code sessions, tag with a local LLM, and build a knowledge graph in Obsidian. All projects converge into one searchable vault.</p>
     <a href="#install" class="cta-btn" data-i18n="cta">Get Started</a>
+    <a href="https://github.com/NAMYUNWOO/claude-knowledge-graph" target="_blank" class="cta-btn github-btn" data-i18n="cta_github">GitHub</a>
   </div>
 </section>
 
@@ -448,7 +457,7 @@ const i18n = {
     legend_session:'Session', legend_concept:'Concept', legend_daily:'Daily Note',
     tagline:'Every conversation becomes knowledge.',
     subtitle:'Auto-capture Claude Code sessions, tag with a local LLM, and build a knowledge graph in Obsidian. All projects converge into one searchable vault.',
-    cta:'Get Started',
+    cta:'Get Started', cta_github:'GitHub',
     who_title:'Who is this for?',
     who_subtitle:'If you use Claude Code daily, your conversations hold valuable knowledge. Stop losing it.',
     who1_title:'Multi-Project Developers', who1_desc:'Conversations from every project and directory converge into one vault. Stop losing knowledge to context-switching.',
@@ -471,7 +480,7 @@ const i18n = {
     legend_session:'세션', legend_concept:'개념', legend_daily:'일일 노트',
     tagline:'모든 대화가 지식이 됩니다.',
     subtitle:'Claude Code 세션을 자동 캡처하고, 로컬 LLM으로 태그하고, Obsidian에 지식 그래프를 구축합니다. 모든 프로젝트가 하나의 볼트로 수렴됩니다.',
-    cta:'시작하기',
+    cta:'시작하기', cta_github:'GitHub',
     who_title:'누구를 위한 도구인가요?',
     who_subtitle:'Claude Code를 매일 사용한다면, 대화 속 소중한 지식을 잃지 마세요.',
     who1_title:'멀티 프로젝트 개발자', who1_desc:'모든 프로젝트와 디렉토리의 대화가 하나의 볼트로 모입니다. 컨텍스트 스위칭으로 지식을 잃지 마세요.',
