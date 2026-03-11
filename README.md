@@ -125,6 +125,11 @@ You can also set paths explicitly in `~/.config/claude-knowledge-graph/config.js
 
 > **Tip**: To change paths later, edit `config.json` directly — no need to re-run `ckg init`.
 
+> **WSL users**: Set `vault-dir` under `/mnt/c/` so that Windows Obsidian can access it. Obsidian on Windows cannot open vaults inside the WSL filesystem (e.g. `~/my-vault`), which will cause errors.
+> ```bash
+> ckg init --vault-dir /mnt/c/Users/<YourWindowsUsername>/obsidian-vault
+> ```
+
 This command will:
 - Create `~/.config/claude-knowledge-graph/config.json`
 - Create `~/.local/share/claude-knowledge-graph/{queue,processed,logs}` directories
