@@ -57,7 +57,7 @@ Claude Code session
 
 > **macOS (Apple Silicon) detailed guide**: [docs/install-macos-apple-silicon.md](docs/install-macos-apple-silicon.md)
 >
-> **Windows (x86/NVIDIA GPU) detailed guide**: [x86_windows_guide_en.md](x86_windows_guide_en.md) ([한국어](x86_windows_guide.md)) — covers `fcntl` replacement, encoding fixes, llama-server CUDA setup, and all Windows-specific patches
+> **Windows (x86/NVIDIA GPU) detailed guide**: [docs/x86_windows_guide_en.md](docs/x86_windows_guide_en.md) ([한국어](docs/x86_windows_guide.md)) — covers `fcntl` replacement, encoding fixes, llama-server CUDA setup, and all Windows-specific patches
 
 ### 1. Install the package
 
