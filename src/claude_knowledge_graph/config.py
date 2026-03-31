@@ -53,6 +53,7 @@ DAILY_DIR = KNOWLEDGE_GRAPH_DIR / "daily"
 CONCEPTS_DIR = KNOWLEDGE_GRAPH_DIR / "concepts"
 SESSIONS_DIR = KNOWLEDGE_GRAPH_DIR / "sessions"
 MOC_PATH = KNOWLEDGE_GRAPH_DIR / "_MOC.md"
+PROFILE_PATH = KNOWLEDGE_GRAPH_DIR / "_Profile.md"
 
 
 def _find_llama_server() -> Path:
@@ -98,6 +99,29 @@ LLAMA_TEMPERATURE = 0.7
 LLAMA_TOP_P = 0.8
 LLAMA_TOP_K = 20
 LLAMA_MAX_TOKENS = 512
+
+
+# ── Embedding model ──
+def _find_embed_model() -> Path:
+    """Find embedding GGUF model: env var → config → scan DATA_DIR/models/*embed*."""
+    import os
+
+    env = os.environ.get("CKG_EMBED_MODEL_PATH")
+    if env:
+        return Path(env)
+    cfg = _load_config()
+    if cfg.get("embed_model_path"):
+        return Path(cfg["embed_model_path"])
+    models_dir = DATA_DIR / "models"
+    if models_dir.exists():
+        for gguf in models_dir.rglob("*[Ee]mbed*.gguf"):
+            return gguf
+    return Path("")  # not configured
+
+
+EMBED_MODEL_PATH = _find_embed_model()
+EMBED_PORT = int(_get("CKG_EMBED_PORT", "embed_port", "8198"))
+EMBEDDINGS_INDEX_PATH = DATA_DIR / "embeddings.json"
 
 # ── Processing ──
 MAX_PROMPT_CHARS = 2500

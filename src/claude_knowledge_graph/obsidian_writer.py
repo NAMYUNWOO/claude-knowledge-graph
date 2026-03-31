@@ -18,7 +18,12 @@ from claude_knowledge_graph.config import (
     LOGS_DIR,
     MOC_PATH,
     PROCESSED_DIR,
+    PROFILE_PATH,
     SESSIONS_DIR,
+)
+from claude_knowledge_graph.memory_relations import (
+    build_version_history,
+    classify_concept_relations,
 )
 
 LOG_FILE = LOGS_DIR / "obsidian_writer.log"
@@ -71,10 +76,22 @@ def session_filename(qa: dict) -> str:
 # ── Step 2: Weighted similarity ──
 
 
+def _load_embeddings_index() -> dict:
+    """Load embeddings index for similarity enhancement (cached per session)."""
+    if not hasattr(_load_embeddings_index, "_cache"):
+        try:
+            from claude_knowledge_graph.embeddings import load_index
+            _load_embeddings_index._cache = load_index()
+        except Exception:
+            _load_embeddings_index._cache = {}
+    return _load_embeddings_index._cache
+
+
 def compute_similarity(qa1: dict, qa2: dict) -> tuple[float, list[str]]:
     """Compute weighted similarity between two Q&A pairs.
 
     Returns (score, list of reason strings).
+    Uses tag/concept overlap + optional embedding cosine similarity.
     """
     qwen1 = qa1.get("qwen_result", {})
     qwen2 = qa2.get("qwen_result", {})
@@ -113,6 +130,28 @@ def compute_similarity(qa1: dict, qa2: dict) -> tuple[float, list[str]]:
     if cwd1 and cwd2 and cwd1 == cwd2:
         score += 0.2
         reasons.append("same project")
+
+    # Embedding cosine similarity: weighted 0.5, capped at 0.5
+    embed_index = _load_embeddings_index()
+    entries = embed_index.get("entries", {})
+    if entries:
+        # Find embeddings by session_id matching
+        id1 = qa1.get("session_id", "")
+        id2 = qa2.get("session_id", "")
+        emb1 = None
+        emb2 = None
+        for file_id, entry in entries.items():
+            if id1 and id1 in file_id:
+                emb1 = entry.get("embedding")
+            if id2 and id2 in file_id:
+                emb2 = entry.get("embedding")
+        if emb1 and emb2:
+            from claude_knowledge_graph.embeddings import cosine_similarity as cos_sim
+            cos = cos_sim(emb1, emb2)
+            embed_score = min(cos * 0.5, 0.5)
+            if embed_score > 0.1:
+                score += embed_score
+                reasons.append(f"semantic: {cos:.2f}")
 
     return score, reasons
 
@@ -230,6 +269,17 @@ def write_session_note(
         if activity_parts:
             activity_section = "\n## Session Activity\n\n" + "\n\n".join(activity_parts) + "\n"
 
+    # Memory type and importance
+    memory_type = qwen.get("memory_type", "dynamic")
+    importance = qwen.get("importance", 3)
+    memory_frontmatter = f"\nmemory_type: {memory_type}\nimportance: {importance}"
+
+    # Memory type callout
+    if memory_type == "static":
+        memory_callout = f"\n> [!info] Static Memory (Importance: {importance}/5)\n"
+    else:
+        memory_callout = f"\n> [!abstract] Dynamic Memory (Importance: {importance}/5)\n"
+
     content = f"""---
 title: "{title}"
 date: {date_str}
@@ -239,11 +289,13 @@ category: {category}
 tags:
 {tags_yaml}
 type: session
+memory_type: {memory_type}
+importance: {importance}
 cwd: "{cwd}"{tool_frontmatter}
 ---
 
 # {title}
-
+{memory_callout}
 **Summary**: {summary}
 
 **Category**: {category}
@@ -414,7 +466,7 @@ def write_concept_note(
         ref_section_parts.append(f"### {cat}\n\n" + "\n".join(by_category[cat]))
     ref_section = "\n\n".join(ref_section_parts)
 
-    # Build annotated related concepts section
+    # Build annotated related concepts section with relationship types
     related_lines = ""
     if related_concepts:
         sorted_related = sorted(
@@ -425,6 +477,9 @@ def write_concept_note(
             lines = []
             for c, meta in sorted_related:
                 parts = []
+                rel_type = meta.get("relationship_type", "co-occurrence")
+                if rel_type != "co-occurrence":
+                    parts.append(rel_type)
                 co = meta.get("co_occurred", 0)
                 if co > 0:
                     parts.append(f"co-occurred {co} time{'s' if co != 1 else ''}")
@@ -435,13 +490,25 @@ def write_concept_note(
                 lines.append(f"- [[{c}]]{annotation}")
             related_lines = "\n## Related Concepts\n\n" + "\n".join(lines) + "\n"
 
+    # Build version history section
+    version_history_lines = ""
+    versions = build_version_history(concept, references)
+    if versions:
+        vh_lines = []
+        for v in versions:
+            fname = session_filename(v["qa"])
+            label = "latest" if v["is_latest"] else ""
+            summary_text = truncate(v["summary"], 80)
+            if label:
+                vh_lines.append(f"- v{v['version']} (latest): [[{fname}]] — \"{summary_text}\"")
+            else:
+                vh_lines.append(f"- v{v['version']}: [[{fname}]] — \"{summary_text}\"")
+        version_history_lines = "\n## Version History\n\n" + "\n".join(vh_lines) + "\n"
+
     ref_count = sum(len(v) for v in by_category.values())
 
     if concept_file.exists():
-        # Rewrite the file with updated content
         existing = concept_file.read_text()
-
-        # Extract existing frontmatter created date
         created_match = re.search(r"created: (\S+)", existing)
         created = created_match.group(1) if created_match else datetime.now().strftime("%Y-%m-%d")
     else:
@@ -454,18 +521,32 @@ def write_concept_note(
 
     tags_yaml = "\n".join(f"  - {t}" for t in sorted(all_tags)) if all_tags else "  - concept"
 
+    # Determine aggregate memory type (majority vote) and average importance
+    static_count = sum(1 for r in references if r.get("qwen_result", {}).get("memory_type") == "static")
+    dynamic_count = len(references) - static_count
+    concept_memory_type = "static" if static_count >= dynamic_count else "dynamic"
+    importances = [r.get("qwen_result", {}).get("importance", 3) for r in references]
+    avg_importance = round(sum(importances) / len(importances)) if importances else 3
+
+    # Version info
+    is_latest = True
+    version = versions[0]["version"] if versions else 1
+    version_frontmatter = f"\nis_latest: {str(is_latest).lower()}\nversion: {version}"
+
     content = f"""---
 title: {concept}
 tags:
 {tags_yaml}
   - concept
 type: concept
+memory_type: {concept_memory_type}
+importance: {avg_importance}{version_frontmatter}
 created: {created}
 references: {ref_count}
 ---
 
 # {concept}
-
+{version_history_lines}
 ## Referenced Conversations
 
 {ref_section}
@@ -482,7 +563,7 @@ def update_moc(
     concept_files: list[str],
     session_files: list[str] | None = None,
 ) -> None:
-    """Update the Map of Content note with daily, concept, and recent session links."""
+    """Update the Map of Content note with daily, concept, and session links."""
     KNOWLEDGE_GRAPH_DIR.mkdir(parents=True, exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -541,6 +622,158 @@ Map of Content for the AI conversation knowledge graph.
 {concept_links}
 """
     MOC_PATH.write_text(content)
+
+
+# ── User Profile ──
+
+
+def write_user_profile(all_qa: list[dict], concept_refs: dict[str, list[dict]]) -> Path | None:
+    """Generate _Profile.md from accumulated knowledge.
+
+    Aggregates static memories (importance >= 4) for core skills,
+    recent dynamic memories for current activity, and top concepts by frequency.
+    """
+    if not PROFILE_PATH or PROFILE_PATH == Path(""):
+        return None
+
+    KNOWLEDGE_GRAPH_DIR.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # Collect static high-importance items
+    static_items: list[dict] = []
+    dynamic_recent: list[dict] = []
+    now = datetime.now()
+
+    for qa in all_qa:
+        qwen = qa.get("qwen_result", {})
+        memory_type = qwen.get("memory_type", "dynamic")
+        importance = qwen.get("importance", 3)
+
+        if memory_type == "static" and importance >= 4:
+            static_items.append(qa)
+
+        if memory_type == "dynamic":
+            ts = qa.get("timestamp", "")
+            try:
+                dt = datetime.fromisoformat(ts)
+                if (now - dt).days <= 7:
+                    dynamic_recent.append(qa)
+            except (ValueError, TypeError):
+                pass
+
+    # Also load previously written QAs for a fuller profile
+    for filepath in PROCESSED_DIR.glob("*.json"):
+        try:
+            qa = json.loads(filepath.read_text())
+        except (json.JSONDecodeError, Exception):
+            continue
+        if qa.get("status") != "written":
+            continue
+        qwen = qa.get("qwen_result", {})
+        memory_type = qwen.get("memory_type", "dynamic")
+        importance = qwen.get("importance", 3)
+
+        if memory_type == "static" and importance >= 4:
+            # Avoid duplicates by session_id
+            if not any(s.get("session_id") == qa.get("session_id") for s in static_items):
+                static_items.append(qa)
+
+        if memory_type == "dynamic":
+            ts = qa.get("timestamp", "")
+            try:
+                dt = datetime.fromisoformat(ts)
+                if (now - dt).days <= 7:
+                    if not any(d.get("session_id") == qa.get("session_id") for d in dynamic_recent):
+                        dynamic_recent.append(qa)
+            except (ValueError, TypeError):
+                pass
+
+    # Extract tags and concepts from static items for skill inference
+    static_tags: dict[str, int] = defaultdict(int)
+    static_concepts: dict[str, int] = defaultdict(int)
+    cwds: dict[str, int] = defaultdict(int)
+
+    for qa in static_items:
+        qwen = qa.get("qwen_result", {})
+        for tag in qwen.get("tags", []):
+            static_tags[tag] += 1
+        for concept in qwen.get("key_concepts", []):
+            static_concepts[concept] += 1
+
+    # Static profile section
+    top_tags = sorted(static_tags.items(), key=lambda x: -x[1])[:15]
+    static_section = ""
+    if top_tags:
+        tag_lines = "\n".join(f"- `{tag}` ({count})" for tag, count in top_tags)
+        static_section = f"## Core Skills & Preferences (Static)\n\n{tag_lines}\n"
+    else:
+        static_section = "## Core Skills & Preferences (Static)\n\n_Not enough static memories yet._\n"
+
+    # Dynamic recent activity section
+    dynamic_section = ""
+    if dynamic_recent:
+        # Group by project
+        for qa in dynamic_recent:
+            cwd = qa.get("cwd", "").replace("\\", "/")
+            if cwd:
+                cwds[cwd] += 1
+
+        recent_projects = sorted(cwds.items(), key=lambda x: -x[1])[:5]
+        project_lines = "\n".join(f"- `{p}` ({c} sessions)" for p, c in recent_projects) if recent_projects else ""
+
+        recent_topics = []
+        for qa in sorted(dynamic_recent, key=lambda x: x.get("timestamp", ""), reverse=True)[:10]:
+            qwen = qa.get("qwen_result", {})
+            title = qwen.get("title", "Untitled")
+            fname = session_filename(qa)
+            recent_topics.append(f"- [[{fname}|{title}]]")
+        topics_str = "\n".join(recent_topics)
+
+        dynamic_section = f"## Recent Activity (Dynamic, last 7 days)\n\n"
+        if project_lines:
+            dynamic_section += f"### Active Projects\n\n{project_lines}\n\n"
+        dynamic_section += f"### Recent Sessions\n\n{topics_str}\n"
+    else:
+        dynamic_section = "## Recent Activity (Dynamic)\n\n_No recent activity._\n"
+
+    # Top concepts by frequency (across all data)
+    all_concept_counts: dict[str, int] = {}
+    for concept, refs in concept_refs.items():
+        all_concept_counts[concept] = len(refs)
+    # Also count from previously written
+    for filepath in PROCESSED_DIR.glob("*.json"):
+        try:
+            qa = json.loads(filepath.read_text())
+        except (json.JSONDecodeError, Exception):
+            continue
+        for concept in qa.get("qwen_result", {}).get("key_concepts", []):
+            if concept not in all_concept_counts:
+                all_concept_counts[concept] = 0
+            # Don't double-count; concept_refs already has current batch
+
+    top_concepts = sorted(all_concept_counts.items(), key=lambda x: -x[1])[:15]
+    concepts_lines = "\n".join(
+        f"{i+1}. [[{c}]] ({count} session{'s' if count != 1 else ''})"
+        for i, (c, count) in enumerate(top_concepts)
+    )
+    concepts_section = f"## Top Concepts (by frequency)\n\n{concepts_lines}\n" if top_concepts else ""
+
+    content = f"""---
+title: Developer Profile
+type: profile
+updated: {today}
+static_memories: {len(static_items)}
+recent_sessions: {len(dynamic_recent)}
+---
+
+# Developer Profile
+
+{static_section}
+{dynamic_section}
+{concepts_section}"""
+
+    PROFILE_PATH.write_text(content)
+    return PROFILE_PATH
 
 
 # ── Step 9: Main orchestration ──
@@ -620,8 +853,8 @@ def main() -> None:
         written_dailies.append(date_str)
         log(f"Wrote daily note: {daily_path.name}")
 
-    # Build concept relations with metadata
-    relations = build_concept_relations(concept_refs)
+    # Build concept relations with typed relationships
+    relations = classify_concept_relations(concept_refs)
     total_relations = sum(len(v) for v in relations.values()) // 2
     log(f"Built concept relations: {total_relations} unique pairs")
 
@@ -636,6 +869,14 @@ def main() -> None:
     if written_dailies or written_concepts or written_sessions:
         update_moc(written_dailies, written_concepts, written_sessions)
         log("Updated _MOC.md")
+
+    # Generate user profile
+    try:
+        profile_path = write_user_profile(all_qa, concept_refs)
+        if profile_path:
+            log(f"Updated profile: {profile_path.name}")
+    except Exception as e:
+        log(f"Profile generation failed: {e}")
 
     log(
         f"Done: {len(written_sessions)} session notes, "

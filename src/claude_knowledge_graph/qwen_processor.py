@@ -263,13 +263,17 @@ Respond with this exact JSON structure:
   "summary": "2-3 sentence summary of what was discussed and resolved",
   "tags": ["lowercase-kebab-case", "3-to-6-tags"],
   "category": "one of: development | debugging | architecture | devops | data | testing | tooling | other",
-  "key_concepts": ["Specific Technical Concept", "2-to-5-concepts"]
+  "key_concepts": ["Specific Technical Concept", "2-to-5-concepts"],
+  "memory_type": "static or dynamic",
+  "importance": 3
 }}
 
 Guidelines:
 - key_concepts: Title Case. Be specific (e.g. "Python Virtual Environments" not "Python"). Think of them as encyclopedia article titles that can be reused across conversations.
 - tags: lowercase kebab-case. Include the primary language/framework and problem domain. Aim for 3-6 tags.
-- category: Choose the single best fit."""
+- category: Choose the single best fit.
+- memory_type: "static" for permanent facts, reusable patterns, architecture decisions, or stable preferences that remain valid over time. "dynamic" for time-sensitive, session-specific, or ephemeral information (e.g. debugging a specific error, temporary workaround).
+- importance: 1 (trivial/ephemeral) to 5 (foundational knowledge worth keeping permanently). Consider reusability across future conversations."""
 
 
 def extract_json(text: str) -> dict | None:
@@ -363,10 +367,17 @@ def process_file(filepath: Path) -> bool:
         log(f"Failed to get Qwen result for {filepath.name}")
         return False
 
+    # Ensure memory_type and importance have valid defaults
+    if result.get("memory_type") not in ("static", "dynamic"):
+        result["memory_type"] = "dynamic"
+    if not isinstance(result.get("importance"), int) or not (1 <= result["importance"] <= 5):
+        result["importance"] = 3
+
     # Merge Qwen results and tool summary into the Q&A entry
     if tool_summary:
         qa["tool_summary"] = tool_summary
     qa["qwen_result"] = result
+
     qa["status"] = "processed"
     qa["processed_at"] = datetime.now().isoformat()
 
@@ -446,6 +457,39 @@ def main() -> None:
             stop_server()
 
         log("Qwen Processor finished")
+
+        # Generate embeddings for newly processed files (if embedding model available)
+        if success > 0:
+            try:
+                from claude_knowledge_graph.embeddings import (
+                    build_embeddings_for_qas,
+                    is_configured as embed_configured,
+                    start_embed_server,
+                    stop_embed_server,
+                )
+
+                if embed_configured():
+                    log("Starting embedding generation...")
+                    qa_files = []
+                    for filepath in PROCESSED_DIR.glob("*.json"):
+                        try:
+                            qa = json.loads(filepath.read_text())
+                            if qa.get("status") == "processed":
+                                qa_files.append((filepath.stem, qa))
+                        except (json.JSONDecodeError, Exception):
+                            continue
+
+                    if qa_files:
+                        try:
+                            start_embed_server()
+                            count = build_embeddings_for_qas(qa_files)
+                            log(f"Generated {count} new embeddings")
+                        finally:
+                            stop_embed_server()
+                else:
+                    log("Embedding model not configured, skipping embedding generation")
+            except Exception as e:
+                log(f"Embedding generation failed (non-fatal): {e}")
 
         # Run obsidian_writer to generate knowledge graph notes
         if success > 0:

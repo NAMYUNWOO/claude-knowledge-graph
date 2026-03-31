@@ -22,6 +22,11 @@ Automatically captures all conversations from Claude Code, tags and summarizes t
 - **Auto-trigger**: Background tagging → note generation on Stop hook
 - **Obsidian knowledge graph**: Auto-generates Daily notes, Concept notes, and MOC
 - **Auto-linking between concepts**: Wikilinks based on co-occurrence + shared tags
+- **Memory classification**: Static/dynamic memory types with importance scoring (1-5)
+- **Rich relationships**: Updates/Extends/Derives relationship detection between concepts
+- **Developer profile**: Auto-generated `_Profile.md` with skills, recent activity, top concepts
+- **Semantic search**: Embedding-based query via dedicated GGUF model (Qwen3-Embedding)
+- **Vault search skill**: `/vault-search` slash command for in-session knowledge retrieval
 
 ## How It Works
 
@@ -29,22 +34,30 @@ Automatically captures all conversations from Claude Code, tags and summarizes t
 Claude Code session
   │
   ├─ UserPromptSubmit hook → capture prompt
-  └─ Stop hook → generate Q&A pair → background tagging
+  └─ Stop hook → generate Q&A pair → background processing
                     │
                     ▼
             Qwen 3.5 4B (via llama-server)
-            → title, summary, tags, concepts
+            → title, summary, tags, concepts, memory_type, importance
+                    │
+                    ▼
+            Qwen3-Embedding (via llama-server, separate port)
+            → vector embeddings for semantic search
                     │
                     ▼
             Obsidian vault/knowledge-graph/
             ├── _MOC.md              (Map of Content)
+            ├── _Profile.md          (auto-generated developer profile)
             ├── daily/YYYY-MM-DD.md  (daily conversation log)
-            └── concepts/*.md        (concept notes, wikilink connected)
+            ├── sessions/*.md        (individual session notes)
+            ├── concepts/*.md        (concept notes with version history)
 ```
 
 ## Installation
 
 > **macOS (Apple Silicon) detailed guide**: [docs/install-macos-apple-silicon.md](docs/install-macos-apple-silicon.md)
+>
+> **Windows (x86/NVIDIA GPU) detailed guide**: [x86_windows_guide_en.md](x86_windows_guide_en.md) ([한국어](x86_windows_guide.md)) — covers `fcntl` replacement, encoding fixes, llama-server CUDA setup, and all Windows-specific patches
 
 ### 1. Install the package
 
@@ -79,7 +92,9 @@ cmake --build llama.cpp/build --config Release -j$(nproc) --target llama-server
 >
 > If `llama-server` is not on your PATH after building from source, specify the path directly in config.json (see Configuration below).
 
-### 3. Download the GGUF model (~2.6 GB)
+### 3. Download the GGUF models
+
+**Tagging model** (required, ~2.6 GB):
 
 ```bash
 pip install huggingface-hub
@@ -88,10 +103,24 @@ huggingface-cli download unsloth/Qwen3.5-4B-GGUF \
   --local-dir ~/.local/share/claude-knowledge-graph/models/Qwen3.5-4B-GGUF
 ```
 
-| Model | Size | VRAM | Recommended Environment |
-|-------|------|------|-------------------------|
-| Qwen3.5-4B Q4_K_M | ~2.6GB | ~3GB | 16GB RAM Mac, 4GB+ VRAM GPU |
-| Qwen3.5-9B Q4_K_XL | ~5.6GB | ~6.5GB | 32GB+ RAM Mac, 8GB+ VRAM GPU |
+**Embedding model** (optional, ~610 MB — enables semantic search):
+
+```bash
+huggingface-cli download Qwen/Qwen3-Embedding-0.6B-GGUF \
+  --include "*Q8_0*" \
+  --local-dir ~/.local/share/claude-knowledge-graph/models/Qwen3-Embedding-0.6B-GGUF
+```
+
+> If `huggingface-cli` is not found, use Python directly:
+> ```bash
+> python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-Embedding-0.6B-GGUF', allow_patterns=['*Q8_0*'], local_dir='$HOME/.local/share/claude-knowledge-graph/models/Qwen3-Embedding-0.6B-GGUF')"
+> ```
+
+| Model | Purpose | Size | VRAM |
+|-------|---------|------|------|
+| Qwen3.5-4B Q4_K_M | Tagging/summarization | ~2.6GB | ~3GB |
+| Qwen3-Embedding-0.6B Q8_0 | Semantic search | ~610MB | ~1GB |
+| Qwen3.5-9B Q4_K_XL | Tagging (higher quality) | ~5.6GB | ~6.5GB |
 
 ### 4. Initialize
 
@@ -144,11 +173,32 @@ After installation, **it works automatically whenever you use Claude Code**.
 # Check status
 ckg status
 
-# Run pipeline manually (tagging + note generation)
+# Run pipeline manually (tagging + embedding + note generation)
 ckg run
+
+# Semantic search across your knowledge
+ckg query "Python virtual environments"
+
+# Search with filters
+ckg query "debugging" --type static --top-k 10
+
+# Get AI-ready context (profile + search results)
+ckg query --context "current project architecture"
+
+# Regenerate embeddings for all Q&A pairs
+ckg embed
 
 # Unregister hooks
 ckg uninstall
+```
+
+### Vault Search Skill (in Claude Code)
+
+Use `/vault-search` inside any Claude Code session to search your knowledge graph:
+
+```
+/vault-search Obsidian knowledge graph
+/vault-search 게임 치트 탐지
 ```
 
 ## CLI Commands
@@ -156,8 +206,10 @@ ckg uninstall
 | Command | Description |
 |---------|-------------|
 | `ckg init --vault-dir <path>` | Create config + register hooks |
-| `ckg run` | Run pipeline (Qwen tagging → Obsidian notes) |
+| `ckg run` | Run pipeline (tagging → embedding → Obsidian notes) |
 | `ckg status` | Show pending/processed/written counts + hooks status |
+| `ckg query "<text>"` | Semantic search (--top-k, --type, --category, --context) |
+| `ckg embed` | Regenerate embeddings for all processed Q&A pairs |
 | `ckg uninstall` | Unregister hooks + optionally delete config |
 
 ## Configuration
@@ -189,22 +241,47 @@ Environment variables take priority over config.json.
 | `CKG_LLAMA_SERVER` | llama-server binary path | Search PATH |
 | `CKG_MODEL_PATH` | GGUF model file path | Search data dir |
 | `CKG_LLAMA_PORT` | llama-server port | `8199` |
+| `CKG_EMBED_MODEL_PATH` | Embedding GGUF model path | Scan `models/*embed*` |
+| `CKG_EMBED_PORT` | Embedding server port | `8198` |
 
 ## Output Structure
 
 ```
 your-vault/knowledge-graph/
 ├── _MOC.md                    # Map of Content (full index)
+├── _Profile.md                # Auto-generated developer profile
 ├── daily/
 │   ├── 2026-03-10.md          # Daily conversation log
 │   └── 2026-03-11.md
-└── concepts/
-    ├── Python Virtual Environments.md  # Concept note (wikilink connected)
-    ├── Docker.md
-    └── REST API.md
+├── sessions/
+│   ├── 2026-03-10_React Setup.md  # Individual session (memory_type, importance)
+│   └── 2026-03-11_Docker Fix.md
+├── concepts/
+│   ├── Python Virtual Environments.md  # Version history + typed relationships
+│   ├── Docker.md
+│   └── REST API.md
 ```
 
-Each concept note is connected to related concepts via wikilinks, allowing you to visually explore the knowledge graph in Obsidian's graph view.
+### Memory Types
+
+Each Q&A pair is classified as:
+- **Static**: Permanent facts, reusable patterns, architecture decisions (e.g., "how to set up venv")
+- **Dynamic**: Session-specific, time-sensitive info (e.g., "debugging this specific error")
+
+### Relationship Types
+
+Concepts are connected with typed relationships:
+- **Updates**: New info supersedes old (e.g., "migrated from React 17 → 18")
+- **Extends**: Additional context enriching existing knowledge
+- **Derives**: Inferred connections from co-occurrence patterns
+- **Co-occurrence**: Concepts appearing together in the same session
+
+### Developer Profile
+
+`_Profile.md` is auto-generated with:
+- **Core Skills** (from static, high-importance memories)
+- **Recent Activity** (dynamic memories from last 7 days)
+- **Top Concepts** (by frequency across all sessions)
 
 ## Optional: Graph Visualization
 
@@ -224,10 +301,15 @@ python scripts/gen_graph_image.py
 
 | Item | Value |
 |------|-------|
-| llama-server startup | ~7s |
+| llama-server startup | ~2-7s |
 | Tagging per file | 2-4s |
-| VRAM usage | ~2.5GB (Q4_K_M) |
+| Embedding per file | <1s |
+| Semantic search query | ~2s (incl. server startup) |
+| VRAM (tagging) | ~2.5GB (Q4_K_M) |
+| VRAM (embedding) | ~1GB (Q8_0) |
 | Note generation | <1s |
+
+> Tagging and embedding servers run sequentially, never concurrently, to share VRAM.
 
 ## License
 

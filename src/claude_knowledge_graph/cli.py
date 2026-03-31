@@ -205,6 +205,103 @@ def status():
                 click.echo(f"  {event}: not registered (run 'ckg init' to fix)")
 
 
+@main.command(name="query")
+@click.argument("query_text")
+@click.option("--top-k", "-k", default=5, help="Number of results (default: 5)")
+@click.option("--type", "memory_type", type=click.Choice(["static", "dynamic"]), help="Filter by memory type")
+@click.option("--category", type=click.Choice(
+    ["development", "debugging", "architecture", "devops", "data", "testing", "tooling", "other"]
+), help="Filter by category")
+@click.option("--importance-min", type=int, help="Minimum importance (1-5)")
+@click.option("--context", "context_mode", is_flag=True, help="Output profile + search as context (for AI agents)")
+def query_cmd(query_text: str, top_k: int, memory_type: str | None, category: str | None,
+              importance_min: int | None, context_mode: bool):
+    """Semantic search across accumulated knowledge."""
+    from claude_knowledge_graph.embeddings import is_configured, start_embed_server, stop_embed_server
+
+    if not is_configured():
+        click.echo("Error: Embedding model not configured.")
+        click.echo("")
+        click.echo("Download an embedding model:")
+        click.echo("  pip install huggingface-hub")
+        click.echo("  huggingface-cli download Qwen/Qwen3-Embedding-0.6B-GGUF \\")
+        click.echo("    --include '*q8_0*' \\")
+        click.echo(f"    --local-dir {DATA_DIR / 'models' / 'Qwen3-Embedding-0.6B-GGUF'}")
+        click.echo("")
+        click.echo("Or set CKG_EMBED_MODEL_PATH=/path/to/model.gguf")
+        sys.exit(1)
+
+    # Build filters
+    filters = {}
+    if memory_type:
+        filters["memory_type"] = memory_type
+    if category:
+        filters["category"] = category
+    if importance_min:
+        filters["importance_min"] = importance_min
+
+    try:
+        start_embed_server()
+
+        if context_mode:
+            from claude_knowledge_graph.memory_query import get_context
+            ctx = get_context(query_text, top_k=top_k)
+            click.echo(ctx)
+        else:
+            from claude_knowledge_graph.memory_query import format_results_table, query
+            results = query(query_text, top_k=top_k, filters=filters if filters else None)
+            click.echo(f"\nResults for: \"{query_text}\"\n")
+            click.echo(format_results_table(results))
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        stop_embed_server()
+
+
+@main.command()
+def embed():
+    """Generate embeddings for all processed Q&A pairs."""
+    from claude_knowledge_graph.embeddings import (
+        build_embeddings_for_qas,
+        is_configured,
+        qa_to_embed_text,
+        start_embed_server,
+        stop_embed_server,
+    )
+
+    if not is_configured():
+        click.echo("Error: Embedding model not configured.")
+        click.echo("Run 'ckg init' or set CKG_EMBED_MODEL_PATH.")
+        sys.exit(1)
+
+    # Load all processed Q&As
+    qa_files = []
+    for filepath in sorted(PROCESSED_DIR.glob("*.json")):
+        try:
+            qa = json.loads(filepath.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        if qa.get("status") in ("processed", "written"):
+            qa_files.append((filepath.stem, qa))
+
+    if not qa_files:
+        click.echo("No processed Q&A pairs found.")
+        return
+
+    click.echo(f"Found {len(qa_files)} Q&A pairs to embed.")
+
+    try:
+        start_embed_server()
+        count = build_embeddings_for_qas(qa_files)
+        click.echo(f"Generated {count} new embeddings.")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        stop_embed_server()
+
+
 @main.command()
 def uninstall():
     """Remove Claude Code hooks and clean up config."""
